@@ -1,0 +1,102 @@
+#version 330 core
+
+// Inputs from Vertex Shader
+in vec3 aPos;
+in vec3 aNormal;
+in vec2 aTexCoord;
+in vec3 ourColor;
+in vec2 staticTexCoord;
+in vec2 scrollingTexCoord;
+
+out vec4 fragColor;
+
+struct GlobalLight {
+  vec3 position;
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  float globalLightOnOff; // on and off value for global light
+};
+
+//Added Spotlight light structure for spotlight
+struct SpotlightLight {
+  vec3 position;
+  vec3 direction; // added light direction
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  float spotlightOnOff; // on and off value for spotlight
+  float cutOffAngle1; // spotlight cutoff angles
+  float cutOffAngle2;
+};
+
+struct Material {
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  float shininess;
+}; 
+
+// Creating all the lights and materials for shader
+uniform GlobalLight globalLight1;  
+uniform GlobalLight globalLight2;
+uniform SpotlightLight spotlightLight;
+uniform Material material;
+
+uniform sampler2D static_texture;
+uniform sampler2D scrolling_texture;
+uniform vec3 viewPos;
+
+//Spotlight - Joey de Vries website https://learnopengl.com/Lighting/Light-casters
+
+void main() {
+
+  // Ambient calculations
+  vec3 ambientLight = globalLight1.ambient * material.ambient * texture(static_texture, aTexCoord).rgb;
+
+  // Diffuse calculations
+  vec3 normalize = normalize(aNormal);
+  vec3 lightDirection = normalize(globalLight1.position - aPos);  
+  float diffuseCalc = (max(dot(normalize, lightDirection), 0.0))*0.5;
+  
+  // Specular calculations
+  vec3 viewDirection = normalize(viewPos - aPos);
+  vec3 reflectionDirection = reflect(-lightDirection, normalize);  
+  float specularCalc = (pow(max(dot(viewDirection, reflectionDirection), 0.0), material.shininess)*0.5);
+
+  //On or Off Light states
+  float globalLight1OnOff = globalLight1.globalLightOnOff;
+  float globalLight2OnOff = globalLight2.globalLightOnOff;
+  float spotlightLightState = spotlightLight.spotlightOnOff;
+
+  //Spotlight calculations for security spotlight
+  lightDirection = normalize(spotlightLight.position - aPos);  
+  float theta = dot(lightDirection, normalize(-spotlightLight.direction));
+  float epsilon = spotlightLight.cutOffAngle1 - spotlightLight.cutOffAngle2;
+  float intensity = clamp((theta - spotlightLight.cutOffAngle2) / epsilon, 0.0, 1.0)*4.5; 
+  
+  // Common Texture
+  vec3 tex = texture(static_texture, aTexCoord).rgb;
+
+  // Diffuse and specular factors for all lights
+  vec3 diffuseFactor = diffuseCalc * material.diffuse * tex;
+  vec3 specularFactor = specularCalc * material.specular * tex;
+
+  // Averaging all the light diffuse values
+  vec3 allLightDiffuse = ((globalLight1OnOff * globalLight1.diffuse) + 
+                          (globalLight2OnOff * globalLight2.diffuse) + 
+                          (intensity * spotlightLightState * spotlightLight.diffuse)) * diffuseFactor;
+
+  // Averaging all the light specular values
+  vec3 allLightSpecular = ((globalLight1OnOff * globalLight1.specular) + 
+                          (globalLight2OnOff * globalLight2.specular) + 
+                          (spotlightLightState * spotlightLight.specular)) * specularFactor;
+
+  // Result is the average of all ambient light values. Lights are turned on-off using GUI buttons
+  vec3 result = (ambientLight * (globalLight1OnOff + globalLight2OnOff + spotlightLightState) / 3) + (allLightDiffuse * 0.5) + (allLightSpecular * 0.5);
+
+  // Animated texture movement
+  vec3 scrollingColor = texture(scrolling_texture, scrollingTexCoord).rgb;
+  vec3 finalColor = scrollingColor * result;
+  fragColor = vec4(finalColor, 1.0f);
+}
